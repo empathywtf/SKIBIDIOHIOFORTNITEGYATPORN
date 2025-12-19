@@ -14,7 +14,30 @@ local VisibleCheck = true
 local TargetPart = "HumanoidRootPart"
 local FOVRadius = 200
 
-local ValidTargetParts = {"Head", "HumanoidRootPart"}
+-- Expanded list of all standard R6 & R15 humanoid parts
+local ValidTargetParts = {
+    "Head",
+    "HumanoidRootPart",
+    "UpperTorso",
+    "LowerTorso",
+    "Torso",
+    "LeftUpperArm",
+    "LeftLowerArm",
+    "LeftHand",
+    "RightUpperArm",
+    "RightLowerArm",
+    "RightHand",
+    "LeftUpperLeg",
+    "LeftLowerLeg",
+    "LeftFoot",
+    "RightUpperLeg",
+    "RightLowerLeg",
+    "RightFoot",
+    "LeftArm",
+    "RightArm",
+    "LeftLeg",
+    "RightLeg",
+}
 
 local GetPlayers = Players.GetPlayers
 local WorldToScreen = Camera.WorldToScreenPoint
@@ -67,16 +90,16 @@ local function IsPlayerVisible(Player)
     local PlayerCharacter = Player.Character
     local LocalPlayerCharacter = LocalPlayer.Character
     
-    if not (PlayerCharacter or LocalPlayerCharacter) then return end 
+    if not (PlayerCharacter and LocalPlayerCharacter) then return false end 
     
     local PlayerRoot = FindFirstChild(PlayerCharacter, TargetPart) or FindFirstChild(PlayerCharacter, "HumanoidRootPart")
     
-    if not PlayerRoot then return end 
+    if not PlayerRoot then return false end 
     
     local CastPoints, IgnoreList = {PlayerRoot.Position, LocalPlayerCharacter, PlayerCharacter}, {LocalPlayerCharacter, PlayerCharacter}
     local ObscuringObjects = #GetPartsObscuringTarget(Camera, CastPoints, IgnoreList)
     
-    return ((ObscuringObjects == 0 and true) or (ObscuringObjects > 0 and false))
+    return ObscuringObjects == 0
 end
 
 local function getClosestPlayer()
@@ -96,7 +119,7 @@ local function getClosestPlayer()
 
         local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
         local Humanoid = FindFirstChild(Character, "Humanoid")
-        if not HumanoidRootPart or not Humanoid or Humanoid and Humanoid.Health <= 0 then continue end
+        if not HumanoidRootPart or not Humanoid or Humanoid.Health <= 0 then continue end
 
         local ScreenPosition, OnScreen = getPositionOnScreen(HumanoidRootPart.Position)
         if not OnScreen then continue end
@@ -104,7 +127,6 @@ local function getClosestPlayer()
         local Distance = (MousePos - ScreenPosition).Magnitude
         if Distance <= (DistanceToMouse or FOVRadius or 2000) then
             if TargetPart == "Closest" then
-                -- Find closest hitpart to mouse
                 local closestPart = nil
                 local closestDistance = math.huge
                 
@@ -126,7 +148,12 @@ local function getClosestPlayer()
                     Closest = closestPart
                 end
             elseif TargetPart == "Random" then
-                Closest = Character[ValidTargetParts[math.random(1, #ValidTargetParts)]]
+                for i = 1, #ValidTargetParts do
+                    if Character:FindFirstChild(ValidTargetParts[i]) then
+                        Closest = Character[ValidTargetParts[i]]
+                        break
+                    end
+                end
             else
                 Closest = Character[TargetPart]
             end
@@ -157,8 +184,8 @@ function Module.Init(MainTab, Library, Options, Toggles)
 	})
 
 	MainLeft:AddDropdown("HitParts", {
-		Values = {"Head", "HumanoidRootPart", "Random", "Closest"},
-		Default = 1,
+		Values = {"Head", "HumanoidRootPart", "UpperTorso", "LowerTorso", "Closest", "Random"},
+		Default = 2,
 		Multi = false,
 		Text = "Hit Part",
 		Tooltip = "Select part to target",
@@ -225,14 +252,14 @@ function Module.Init(MainTab, Library, Options, Toggles)
 	FOVCircle.Radius = 200
 
 	RunService.RenderStepped:Connect(function()
-		FOVCircle.Visible = Toggles.VisibleFOV and Toggles.VisibleFOV.Value
+		FOVCircle.Visible = Toggles.VisibleFOV and Toggles.VisibleFOV.Value or false
 		FOVCircle.Radius = Options.FOVRadius and Options.FOVRadius.Value or 200
 		FOVCircle.Position = GetMouseLocation(UserInputService)
 		
 		SilentAimEnabled = Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value or false
 		HitChance = Options.HitChance and Options.HitChance.Value or 100
 		TeamCheck = Toggles.SilentAimTeamCheck and Toggles.SilentAimTeamCheck.Value or false
-		VisibleCheck = Toggles.VisibleCheck and Toggles.VisibleCheck.Value or true
+		VisibleCheck = Toggles.VisibleCheck and Toggles.VisibleCheck.Value or false
 		FOVRadius = Options.FOVRadius and Options.FOVRadius.Value or 200
 		TargetPart = Options.HitParts and Options.HitParts.Value or "HumanoidRootPart"
 	end)
