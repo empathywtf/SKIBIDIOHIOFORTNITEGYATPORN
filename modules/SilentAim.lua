@@ -14,29 +14,14 @@ local VisibleCheck = true
 local TargetPart = "HumanoidRootPart"
 local FOVRadius = 200
 
--- Expanded list of all standard R6 & R15 humanoid parts
+-- Expanded hit part list for R6/R15
 local ValidTargetParts = {
-    "Head",
-    "HumanoidRootPart",
-    "UpperTorso",
-    "LowerTorso",
-    "Torso",
-    "LeftUpperArm",
-    "LeftLowerArm",
-    "LeftHand",
-    "RightUpperArm",
-    "RightLowerArm",
-    "RightHand",
-    "LeftUpperLeg",
-    "LeftLowerLeg",
-    "LeftFoot",
-    "RightUpperLeg",
-    "RightLowerLeg",
-    "RightFoot",
-    "LeftArm",
-    "RightArm",
-    "LeftLeg",
-    "RightLeg",
+    "Head","HumanoidRootPart","UpperTorso","LowerTorso","Torso",
+    "LeftUpperArm","LeftLowerArm","LeftHand",
+    "RightUpperArm","RightLowerArm","RightHand",
+    "LeftUpperLeg","LeftLowerLeg","LeftFoot",
+    "RightUpperLeg","RightLowerLeg","RightFoot",
+    "LeftArm","RightArm","LeftLeg","RightLeg"
 }
 
 local GetPlayers = Players.GetPlayers
@@ -48,9 +33,7 @@ local GetMouseLocation = UserInputService.GetMouseLocation
 local ExpectedArguments = {
     FindPartOnRayWithIgnoreList = {
         ArgCountRequired = 3,
-        Args = {
-            "Instance", "Ray", "table", "boolean", "boolean"
-        }
+        Args = {"Instance", "Ray", "table", "boolean", "boolean"}
     }
 }
 
@@ -86,81 +69,60 @@ local function getMousePosition()
     return GetMouseLocation(UserInputService)
 end
 
-local function IsPlayerVisible(Player)
-    local PlayerCharacter = Player.Character
-    local LocalPlayerCharacter = LocalPlayer.Character
-    
-    if not (PlayerCharacter and LocalPlayerCharacter) then return false end 
-    
-    local PlayerRoot = FindFirstChild(PlayerCharacter, TargetPart) or FindFirstChild(PlayerCharacter, "HumanoidRootPart")
-    
-    if not PlayerRoot then return false end 
-    
-    local CastPoints, IgnoreList = {PlayerRoot.Position, LocalPlayerCharacter, PlayerCharacter}, {LocalPlayerCharacter, PlayerCharacter}
-    local ObscuringObjects = #GetPartsObscuringTarget(Camera, CastPoints, IgnoreList)
-    
-    return ObscuringObjects == 0
+-- Visible check per part
+local function IsPartVisible(Part)
+    local LocalCharacter = LocalPlayer.Character
+    if not (Part and LocalCharacter) then return false end
+    local IgnoreList = {LocalCharacter, Part.Parent}
+    local PartsObscuring = Camera:GetPartsObscuringTarget({Part.Position}, IgnoreList)
+    return #PartsObscuring == 0
 end
 
+-- Visible check per player
+local function IsPlayerVisible(Player)
+    local Character = Player.Character
+    if not Character then return false end
+    for _, partName in ipairs(ValidTargetParts) do
+        local Part = Character:FindFirstChild(partName)
+        if Part and IsPartVisible(Part) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Get closest part to mouse cursor
 local function getClosestPlayer()
-    if not TargetPart then return end
-    local Closest
-    local DistanceToMouse
     local MousePos = getMousePosition()
-    
-    for _, Player in next, GetPlayers(Players) do
+    local Closest
+    local SmallestDistance = math.huge
+
+    for _, Player in ipairs(GetPlayers(Players)) do
         if Player == LocalPlayer then continue end
         if TeamCheck and Player.Team == LocalPlayer.Team then continue end
 
         local Character = Player.Character
         if not Character then continue end
-        
+        local Humanoid = Character:FindFirstChild("Humanoid")
+        if not Humanoid or Humanoid.Health <= 0 then continue end
         if VisibleCheck and not IsPlayerVisible(Player) then continue end
 
-        local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
-        local Humanoid = FindFirstChild(Character, "Humanoid")
-        if not HumanoidRootPart or not Humanoid or Humanoid.Health <= 0 then continue end
-
-        local ScreenPosition, OnScreen = getPositionOnScreen(HumanoidRootPart.Position)
-        if not OnScreen then continue end
-
-        local Distance = (MousePos - ScreenPosition).Magnitude
-        if Distance <= (DistanceToMouse or FOVRadius or 2000) then
-            if TargetPart == "Closest" then
-                local closestPart = nil
-                local closestDistance = math.huge
-                
-                for _, partName in ipairs(ValidTargetParts) do
-                    local part = FindFirstChild(Character, partName)
-                    if part then
-                        local partScreenPos, partOnScreen = getPositionOnScreen(part.Position)
-                        if partOnScreen then
-                            local partDistance = (MousePos - partScreenPos).Magnitude
-                            if partDistance < closestDistance then
-                                closestDistance = partDistance
-                                closestPart = part
-                            end
-                        end
+        -- Loop through all hit parts
+        for _, partName in ipairs(ValidTargetParts) do
+            local Part = Character:FindFirstChild(partName)
+            if Part then
+                local ScreenPos, OnScreen = WorldToScreen(Camera, Part.Position)
+                if OnScreen then
+                    local Distance = (Vector2.new(ScreenPos.X, ScreenPos.Y) - MousePos).Magnitude
+                    if Distance < SmallestDistance and Distance <= FOVRadius then
+                        SmallestDistance = Distance
+                        Closest = Part
                     end
                 end
-                
-                if closestPart then
-                    Closest = closestPart
-                end
-            elseif TargetPart == "Random" then
-                for i = 1, #ValidTargetParts do
-                    if Character:FindFirstChild(ValidTargetParts[i]) then
-                        Closest = Character[ValidTargetParts[i]]
-                        break
-                    end
-                end
-            else
-                Closest = Character[TargetPart]
             end
-            
-            DistanceToMouse = Distance
         end
     end
+
     return Closest
 end
 
@@ -214,7 +176,7 @@ function Module.Init(MainTab, Library, Options, Toggles)
 		Default = false,
 	})
 	
-	-- Hook
+	-- Hook for FindPartOnRayWithIgnoreList
 	local oldNamecall
 	oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
 		local Method = getnamecallmethod()
@@ -222,17 +184,15 @@ function Module.Init(MainTab, Library, Options, Toggles)
 		local self = Arguments[1]
 		local chance = CalculateChance(HitChance)
 		
-		if SilentAimEnabled and self == workspace and not checkcaller() and chance == true then
+		if SilentAimEnabled and self == workspace and not checkcaller() and chance then
 			if Method == "FindPartOnRayWithIgnoreList" then
 				if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithIgnoreList) then
 					local A_Ray = Arguments[2]
-
 					local HitPart = getClosestPlayer()
 					if HitPart then
 						local Origin = A_Ray.Origin
 						local Direction = getDirection(Origin, HitPart.Position)
 						Arguments[2] = Ray.new(Origin, Direction)
-
 						return oldNamecall(unpack(Arguments))
 					end
 				end
@@ -254,7 +214,7 @@ function Module.Init(MainTab, Library, Options, Toggles)
 	RunService.RenderStepped:Connect(function()
 		FOVCircle.Visible = Toggles.VisibleFOV and Toggles.VisibleFOV.Value or false
 		FOVCircle.Radius = Options.FOVRadius and Options.FOVRadius.Value or 200
-		FOVCircle.Position = GetMouseLocation(UserInputService)
+		FOVCircle.Position = getMousePosition()
 		
 		SilentAimEnabled = Toggles.SilentAimEnabled and Toggles.SilentAimEnabled.Value or false
 		HitChance = Options.HitChance and Options.HitChance.Value or 100
